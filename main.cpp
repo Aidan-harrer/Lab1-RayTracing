@@ -54,17 +54,19 @@ void writeColor(int index, Vec3 p, uint8_t *pixels) {
 Color traceRay(const Ray &r, Scene scene, int depth) {
     Color c, directColor, reflectedColor, refractedColor;
     if (depth < 0) return c;
-
     Intersection hit, shadow;
     if (!scene.intersect(r, hit)) return Color(0.0f, 0.0f, 0.0f); // Background color
-
     const Vec3 lightPos(0.0f, 30.0f, -5.0f);
     Vec3 lightDir = lightPos - hit.position;
     lightDir.normalize();
-
-    directColor = Color(1.0f, 1.0f, 1.0f);
-
-    c = directColor;
+    Ray reflection = hit.getReflectedRay();
+    Ray refraction = hit.getRefractedRay();
+    if (hit.material.reflectivity > 0) reflectedColor = traceRay(reflection, scene, depth - 1); // reflection
+    if (hit.material.transparency > 0) refractedColor = traceRay(refraction, scene, depth - 1);
+    directColor = hit.material.color * std::max(hit.normal * lightDir, 0.0f);
+    if (scene.intersect(hit.getShadowRay(lightPos), shadow)) directColor = Color(0.0f, 0.0f, 0.0f); // shadow
+    c = (1.0 - hit.material.reflectivity - hit.material.transparency) * directColor +
+        hit.material.reflectivity * reflectedColor + hit.material.transparency * refractedColor;
 
     return c;
 }
@@ -106,26 +108,26 @@ int main() {
     };
 
     // TODO: Uncomment to render floor triangles
-    // scene.push(Triangle(&vertices[0], whiteDiffuse)); // Floor 1
-    // scene.push(Triangle(&vertices[3], whiteDiffuse)); // Floor 2
+    scene.push(Triangle(&vertices[0], whiteDiffuse)); // Floor 1
+    scene.push(Triangle(&vertices[3], whiteDiffuse)); // Floor 2
 
     // TODO: Uncomment to render Cornell box
-    // scene.push(Triangle(&vertices[6], whiteDiffuse));  // Back wall 1
-    // scene.push(Triangle(&vertices[9], whiteDiffuse));  // Back wall 2
-    // scene.push(Triangle(&vertices[12], whiteDiffuse)); // Ceiling 1
-    // scene.push(Triangle(&vertices[15], whiteDiffuse)); // Ceiling 2
-    // scene.push(Triangle(&vertices[18], redDiffuse));   // Red wall 1
-    // scene.push(Triangle(&vertices[21], redDiffuse));   // Red wall 2
-    // scene.push(Triangle(&vertices[24], greenDiffuse)); // Green wall 1
-    // scene.push(Triangle(&vertices[27], greenDiffuse)); // Green wall 2
+    scene.push(Triangle(&vertices[6], whiteDiffuse));  // Back wall 1
+    scene.push(Triangle(&vertices[9], whiteDiffuse));  // Back wall 2
+    scene.push(Triangle(&vertices[12], whiteDiffuse)); // Ceiling 1
+    scene.push(Triangle(&vertices[15], whiteDiffuse)); // Ceiling 2
+    scene.push(Triangle(&vertices[18], redDiffuse));   // Red wall 1
+    scene.push(Triangle(&vertices[21], redDiffuse));   // Red wall 2
+    scene.push(Triangle(&vertices[24], greenDiffuse)); // Green wall 1
+    scene.push(Triangle(&vertices[27], greenDiffuse)); // Green wall 2
 
     // TODO: Uncomment to render reflective spheres
-    // scene.push(Sphere(Vec3(7.0f, 3.0f, 0.0f), 3.0f, yellowReflective));
-    // scene.push(Sphere(Vec3(9.0f, 10.0f, 0.0f), 3.0f, yellowReflective));
+    scene.push(Sphere(Vec3(7.0f, 3.0f, 0.0f), 3.0f, yellowReflective));
+    scene.push(Sphere(Vec3(10.0f, 9.0f, 0.0f), 3.0f, yellowReflective));
 
     // TODO: Uncomment to render refractive spheres
-    // scene.push(Sphere(Vec3(-7.0f, 3.0f, 0.0f), 3.0f, transparent));
-    // scene.push(Sphere(Vec3(-9.0f, 10.0f, 0.0f), 3.0f, transparent));
+    scene.push(Sphere(Vec3(-7.0f, 3.0f, 0.0f), 3.0f, transparent));
+    scene.push(Sphere(Vec3(-9.0f, 10.0f, 0.0f), 3.0f, transparent));
 
     // Setup camera
     Vec3 eye(0.0f, 10.0f, 30.0f);
@@ -144,13 +146,18 @@ int main() {
             Color pixel;
 
             // Get center of pixel coordinate
-            float cx = ((float)i) + 0.5f;
-            float cy = ((float)j) + 0.5f;
+            for (int x = 0; x < 3; ++x) {
+                for (int y = 0; y < 3; ++y) {
 
-            // Get a ray and trace it
-            Ray r = camera.getRay(cx, cy);
-            pixel = traceRay(r, scene, depth);
+                    float cx = (i) + (x) / 8.0f + 2 * (uniform()) / 8.0f;
+                    float cy = (j) + (y) / 8.0f + 2 * (uniform()) / 8.0f;
 
+                    // Get a ray and trace it
+                    Ray r = camera.getRay(cx, cy);
+                    pixel += traceRay(r, scene, depth);
+                }
+            }
+            pixel *= (1.0f / 9.0f);
             // Write pixel value to image
             writeColor((j * imageWidth + i) * numChannels, pixel, pixels);
         }

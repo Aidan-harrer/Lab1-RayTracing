@@ -11,11 +11,8 @@ Ray Intersection::getShadowRay(const Vec3 &lightPos) {
 Ray Intersection::getReflectedRay(void) {
     Vec3 N = normal;
     const Vec3 D = ray.dir;
-
-    // TODO: Implement reflection
-    // -------------------
-    Vec3 R = D;
-    // -------------------
+    // Implement reflection
+    Vec3 R = D - (2 * N * (D * N));
 
     return Ray(position, R, 0.01f, FLT_MAX);
 }
@@ -28,10 +25,11 @@ Ray Intersection::getRefractedRay(void) {
 
     // TODO: Implement refraction
     // -------------------
-    Vec3 R = D;
-    // -------------------
-
-    return Ray(position, R, 0.01f, FLT_MAX);
+    float R = -D*N;
+    float c = 1 - (eta * eta) * (1 - R*R);
+    if (c < 0) return getReflectedRay();
+    Vec3 t = eta * D + (eta * R - sqrt(c))* N;
+    return Ray(position, t, 0.01f, FLT_MAX);
 }
 
 } // namespace sw
