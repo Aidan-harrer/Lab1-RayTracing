@@ -149,8 +149,9 @@ int main() {
             for (int x = 0; x < 3; ++x) {
                 for (int y = 0; y < 3; ++y) {
 
-                    float cx = (i) + (x) / 8.0f + 2 * (uniform()) / 8.0f;
-                    float cy = (j) + (y) / 8.0f + 2 * (uniform()) / 8.0f;
+                    float cx = (i) + (x)  * (uniform()) / 3.0f;
+                    
+                    float cy = (j) + (y)  * (uniform()) / 3.0f;
 
                     // Get a ray and trace it
                     Ray r = camera.getRay(cx, cy);
