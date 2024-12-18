@@ -93,7 +93,7 @@ Color traceRay(const Ray &r, Scene scene, int depth) {
                                    //   Vec3(0.5f, 15.5f, -10.5f),
                                    //   Vec3(-0.5f, 15.5f, -9.5f),
                                    // };
-                                   Vec3(0.0f, 20.0f, -15.0f)};
+                                   Vec3(0.0f, 30.0f, -5.0f)};
     const int numLights = 1;
     const float lightSize = 0.1f; // Small area light size
 
