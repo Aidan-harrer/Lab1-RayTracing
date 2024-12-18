@@ -51,21 +51,77 @@ void writeColor(int index, Vec3 p, uint8_t *pixels) {
     }
 }
 
+Vec3 tileNormal(const Vec3 &normal, float tileSize) {
+    // Convert normal vector to spherical coordinates
+    float u = 0.5f + atan2(normal.m[2], normal.m[0]) / (2.0f * M_PI); // z -> m[2], x -> m[0]
+    float v = 0.5f - asin(normal.m[1]) / M_PI;                        // y -> m[1]
+
+    // Map (u, v) to discrete tiles
+    u = floor(u / tileSize) * tileSize;
+    v = floor(v / tileSize) * tileSize;
+
+    // Convert back to a perturbed normal
+    float theta = 2.0f * M_PI * u;
+    float phi = M_PI * (1.0f - v);
+
+    Vec3 perturbedNormal;
+    perturbedNormal.m[0] = sin(phi) * cos(theta); // x -> m[0]
+    perturbedNormal.m[1] = cos(phi);              // y -> m[1]
+    perturbedNormal.m[2] = sin(phi) * sin(theta); // z -> m[2]
+
+    return perturbedNormal;
+}
+
 Color traceRay(const Ray &r, Scene scene, int depth) {
     Color c, directColor, reflectedColor, refractedColor;
-    if (depth < 0) return c;
+    if (depth < 0) return c; // Base case for recursion
+
     Intersection hit, shadow;
     if (!scene.intersect(r, hit)) return Color(0.0f, 0.0f, 0.0f); // Background color
+
     const Vec3 lightPos(0.0f, 30.0f, -5.0f);
+    const float lightSize = 1.0f; // Size of the area light
     Vec3 lightDir = lightPos - hit.position;
     lightDir.normalize();
+
+    // Soft shadows with area light sampling
+    int numSamples = 16;
+    float shadowIntensity = 0.0f;
+
+    for (int i = 0; i < numSamples; ++i) {
+        Vec3 randomPointOnLight = lightPos + Vec3((uniform() - 0.5f) * lightSize, 0.0f, (uniform() - 0.5f) * lightSize);
+        if (scene.intersect(hit.getShadowRay(randomPointOnLight), shadow)) {
+            shadowIntensity += 1.0f;
+        }
+    }
+    shadowIntensity /= numSamples;
+
+    // Calculate direct lighting with shadow scaling
+    directColor = hit.material.color * std::max(hit.normal * lightDir, 0.0f);
+    directColor *= 1.0f - shadowIntensity;
+
     Ray reflection = hit.getReflectedRay();
     Ray refraction = hit.getRefractedRay();
-    if (hit.material.reflectivity > 0) reflectedColor = traceRay(reflection, scene, depth - 1); // reflection
-    if (hit.material.transparency > 0) refractedColor = traceRay(refraction, scene, depth - 1);
-    directColor = hit.material.color * std::max(hit.normal * lightDir, 0.0f);
-    if (scene.intersect(hit.getShadowRay(lightPos), shadow)) directColor = Color(0.0f, 0.0f, 0.0f); // shadow
-    c = (1.0 - hit.material.reflectivity - hit.material.transparency) * directColor +
+
+    // Handle reflections
+    if (hit.material.reflectivity > 0) {
+        reflectedColor = traceRay(reflection, scene, depth - 1);
+
+        // Tint reflections green if bouncing off the disco ball
+        if (hit.material.id == 1) { // Disco ball ID
+            reflectedColor = Color(0.0f,
+                                   reflectedColor.m[1] * 0.5f, // Green intensity
+                                   0.0f);
+        }
+    }
+
+    // Handle refractions
+    if (hit.material.transparency > 0) {
+        refractedColor = traceRay(refraction, scene, depth - 1);
+    }
+
+    // Combine lighting contributions
+    c = (1.0f - hit.material.reflectivity - hit.material.transparency) * directColor +
         hit.material.reflectivity * reflectedColor + hit.material.transparency * refractedColor;
 
     return c;
@@ -89,9 +145,10 @@ int main() {
     Scene scene;
 
     // Add three spheres with diffuse material
-    scene.push(Sphere(Vec3(-7.0f, 3.0f, -20.0f), 3.0f, greenDiffuse));
-    scene.push(Sphere(Vec3(0.0f, 3.0f, -20.0f), 3.0f, blueDiffuse));
-    scene.push(Sphere(Vec3(7.0f, 3.0f, -20.0f), 3.0f, redDiffuse));
+    Material discoBallMaterial = Material(Color(1.0f, 1.0f, 1.0f), 0.9f, 0.0f, 1.0f, 1);
+
+    // Add the disco ball to the scene
+    scene.push(Sphere(Vec3(0.0f, 15.0f, -10.0f), 2.0f, discoBallMaterial));
 
     // Define vertices for Cornell box
     Vec3 vertices[] = {
@@ -122,12 +179,6 @@ int main() {
     scene.push(Triangle(&vertices[27], greenDiffuse)); // Green wall 2
 
     // TODO: Uncomment to render reflective spheres
-    scene.push(Sphere(Vec3(7.0f, 3.0f, 0.0f), 3.0f, yellowReflective));
-    scene.push(Sphere(Vec3(10.0f, 9.0f, 0.0f), 3.0f, yellowReflective));
-
-    // TODO: Uncomment to render refractive spheres
-    scene.push(Sphere(Vec3(-7.0f, 3.0f, 0.0f), 3.0f, transparent));
-    scene.push(Sphere(Vec3(-9.0f, 10.0f, 0.0f), 3.0f, transparent));
 
     // Setup camera
     Vec3 eye(0.0f, 10.0f, 30.0f);
@@ -149,9 +200,9 @@ int main() {
             for (int x = 0; x < 3; ++x) {
                 for (int y = 0; y < 3; ++y) {
 
-                    float cx = (i) + (x)  * (uniform()) / 3.0f;
-                    
-                    float cy = (j) + (y)  * (uniform()) / 3.0f;
+                    float cx = (i) + (x) * (uniform()) / 3.0f;
+
+                    float cy = (j) + (y) * (uniform()) / 3.0f;
 
                     // Get a ray and trace it
                     Ray r = camera.getRay(cx, cy);

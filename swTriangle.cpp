@@ -14,9 +14,9 @@ bool Triangle::intersect(const Ray &r, Intersection &isect) const {
     Vec3 r_plane = Q - vertices[0];
     float v = (e1%r_plane).norm() / n.norm();
     float w = (r_plane%e2).norm() / n.norm();
-    if (v < 0) return false;
-    if (w < 0) return false;
-    if (v + w >= 1) return false;
+    if (((e1%r_plane) * n) <= 0) return false;
+    if (((r_plane%e2) * n) <= 0) return false;
+    if (v + w > 1) return false;
     isect.hitT = t;
     isect.normal = n;
     isect.normal.normalize();
