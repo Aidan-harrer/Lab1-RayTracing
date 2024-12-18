@@ -11,6 +11,7 @@ class Vec3 {
     Vec3() = default;
 
     Vec3(float m0, float m1, float m2) : m{m0, m1, m2} {}
+    float lengthSquared() const { return m[0] * m[0] + m[1] * m[1] + m[2] * m[2]; }
 
     float x() const { return m[0]; }
 
@@ -60,10 +61,7 @@ class Vec3 {
         return *this;
     }
 
-    float norm()
-    {
-        return std::sqrt(*this * *this);
-    }
+    float norm() { return std::sqrt(*this * *this); }
 
   public:
     float m[3]{0.0f, 0.0f, 0.0f};

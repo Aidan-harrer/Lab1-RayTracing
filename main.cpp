@@ -71,6 +71,14 @@ Vec3 tileNormal(const Vec3 &normal, float tileSize) {
 
     return perturbedNormal;
 }
+// Function to generate random directions for scattering rays
+Vec3 randomInUnitSphere() {
+    Vec3 p;
+    do {
+        p = Vec3(uniform(), uniform(), uniform()) * 2.0f - Vec3(1.0f, 1.0f, 1.0f); // Random point in cube
+    } while (p.lengthSquared() >= 1.0f); // Reject points outside unit sphere
+    return p;
+}
 
 Color traceRay(const Ray &r, Scene scene, int depth) {
     Color c, directColor, reflectedColor, refractedColor;
@@ -79,45 +87,68 @@ Color traceRay(const Ray &r, Scene scene, int depth) {
     Intersection hit, shadow;
     if (!scene.intersect(r, hit)) return Color(0.0f, 0.0f, 0.0f); // Background color
 
-    const Vec3 lightPos(0.0f, 30.0f, -5.0f);
-    const float lightSize = 1.0f; // Size of the area light
-    Vec3 lightDir = lightPos - hit.position;
-    lightDir.normalize();
+    // Define 4 small lights inside the disco ball
+    const Vec3 lightPositions[] = {//   Vec3(0.7f, 15.5f, -10.2f),
+                                   //   Vec3(-0.7f, 15.5f, -9.5f),
+                                   //   Vec3(0.5f, 15.5f, -10.5f),
+                                   //   Vec3(-0.5f, 15.5f, -9.5f),
+                                   // };
+                                   Vec3(0.0f, 20.0f, -15.0f)};
+    const int numLights = 1;
+    const float lightSize = 0.1f; // Small area light size
 
-    // Soft shadows with area light sampling
-    int numSamples = 16;
-    float shadowIntensity = 0.0f;
+    Vec3 perturbedNormal = tileNormal(hit.normal, 0.4f); // Adjust `tileSize` to control facet size
 
-    for (int i = 0; i < numSamples; ++i) {
-        Vec3 randomPointOnLight = lightPos + Vec3((uniform() - 0.5f) * lightSize, 0.0f, (uniform() - 0.5f) * lightSize);
-        if (scene.intersect(hit.getShadowRay(randomPointOnLight), shadow)) {
-            shadowIntensity += 1.0f;
+    directColor = Color(0.0f, 0.0f, 0.0f); // Accumulate direct lighting from all lights
+
+    // Calculate direct lighting from each light source
+    for (int l = 0; l < numLights; ++l) {
+        Vec3 lightPos = lightPositions[l];
+        Vec3 lightDir = lightPos - hit.position;
+        lightDir.normalize();
+
+        // Soft shadows with area light sampling
+        int numSamples = 16;
+        float shadowIntensity = 0.0f;
+
+        for (int i = 0; i < numSamples; ++i) {
+            Vec3 randomPointOnLight =
+              lightPos + Vec3((uniform() - 0.5f) * lightSize, 0.0f, (uniform() - 0.5f) * lightSize);
+            if (scene.intersect(hit.getShadowRay(randomPointOnLight), shadow)) {
+                shadowIntensity += 0.75f;
+            }
         }
+        shadowIntensity /= numSamples;
+
+        // Calculate direct lighting for this light
+        Color lightContribution = hit.material.color * std::max(hit.normal * lightDir, 0.0f);
+        lightContribution *= 1.0f - shadowIntensity;
+
+        directColor += lightContribution; // Add contribution from this light
     }
-    shadowIntensity /= numSamples;
 
-    // Calculate direct lighting with shadow scaling
-    directColor = hit.material.color * std::max(hit.normal * lightDir, 0.0f);
-    directColor *= 1.0f - shadowIntensity;
-
-    Ray reflection = hit.getReflectedRay();
-    Ray refraction = hit.getRefractedRay();
-
-    // Handle reflections
+    // Check if the material is reflective (for disco ball)
     if (hit.material.reflectivity > 0) {
-        reflectedColor = traceRay(reflection, scene, depth - 1);
+        reflectedColor = Color(0.0f, 0.0f, 0.0f);
 
-        // Tint reflections green if bouncing off the disco ball
-        if (hit.material.id == 1) { // Disco ball ID
-            reflectedColor = Color(0.0f,
-                                   reflectedColor.m[1] * 0.5f, // Green intensity
-                                   0.0f);
+        // Generate multiple reflection rays for the disco ball
+        const int numReflectionRays = 5; // Number of rays to generate
+        for (int i = 0; i < numReflectionRays; ++i) {
+            // Randomly scatter the reflection rays around the hit point
+            Vec3 scatterDirection = hit.normal + randomInUnitSphere();
+            scatterDirection.normalize();
+
+            // Create a new ray from the hit point in the scattered direction
+            Ray reflectionRay(hit.position, scatterDirection);
+
+            // Trace the scattered ray
+            reflectedColor += traceRay(reflectionRay, scene, depth - 1);
         }
     }
 
     // Handle refractions
     if (hit.material.transparency > 0) {
-        refractedColor = traceRay(refraction, scene, depth - 1);
+        refractedColor = traceRay(hit.getRefractedRay(), scene, depth - 1);
     }
 
     // Combine lighting contributions
@@ -132,7 +163,6 @@ int main() {
     const int imageHeight = imageWidth;
     const int numChannels = 3;
     uint8_t *pixels = new uint8_t[imageWidth * imageHeight * numChannels];
-
     // Define materials
     Material whiteDiffuse = Material(Color(0.9f, 0.9f, 0.9f), 0.0f, 0.0f, 1.0f);
     Material greenDiffuse = Material(Color(0.1f, 0.6f, 0.1f), 0.0f, 0.0f, 1.0f);
@@ -149,6 +179,8 @@ int main() {
 
     // Add the disco ball to the scene
     scene.push(Sphere(Vec3(0.0f, 15.0f, -10.0f), 2.0f, discoBallMaterial));
+    scene.push(Sphere(Vec3(-3.0f, 9.0f, -3.0f), 2.0f, transparent));
+    scene.push(Sphere(Vec3(3.0f, 9.0f, -3.0f), 2.0f, transparent));
 
     // Define vertices for Cornell box
     Vec3 vertices[] = {
@@ -186,7 +218,6 @@ int main() {
     Vec3 up(0.0f, 1.0f, 0.0f);
     Camera camera(eye, lookAt, up, 52.0f, (float)imageWidth / (float)imageHeight);
     camera.setup(imageWidth, imageHeight);
-
     // Ray trace pixels
     int depth = 3;
     std::cout << "Rendering... ";
