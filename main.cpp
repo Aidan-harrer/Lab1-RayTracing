@@ -71,28 +71,6 @@ Vec3 tileNormal(const Vec3 &normal, float tileSize) {
 
     return perturbedNormal;
 }
-Vec3 reflect(const Vec3 &lightDir, const Vec3 &normal) { return 2.0f * (normal * lightDir) * normal - lightDir; }
-Vec3 clampColor(const Vec3 &color, float minVal, float maxVal) {
-    return Vec3(std::max(minVal, std::min(color.x(), maxVal)), std::max(minVal, std::min(color.y(), maxVal)),
-                std::max(minVal, std::min(color.z(), maxVal)));
-}
-
-Color calculateLighting(const Vec3 &lightDir, const Vec3 &normal, const Vec3 &viewDir, const Color &lightColor) {
-    Vec3 reflectDir = reflect(lightDir, normal);
-
-    // Diffuse shading
-    float diffuse = std::max(normal * lightDir, 0.0f);
-
-    // Specular highlights with sharpness control
-    float shininess = 16.0f; // Adjust for sharper or softer highlights
-    float specular = std::pow(std::max(viewDir * reflectDir, 0.0f), shininess);
-
-    // Combine contributions
-    Color lightContribution = lightColor * (diffuse + 0.5f * specular);
-
-    // Clamp light contributions to avoid overexposure
-    return clampColor(lightContribution, 0.0f, 1.0f);
-}
 // Function to generate random directions for scattering rays
 Vec3 randomInUnitSphere() {
     Vec3 p;
@@ -167,21 +145,12 @@ Color traceRay(const Ray &r, Scene scene, int depth) {
         shadowIntensity /= numSamples;
 
         // Calculate direct lighting for this light
-        float specularBoost = 2.0f; // Boost for reflected light on the disco ball
         Color lightContribution = hit.material.color * std::max(hit.normal * lightDir, 0.0f);
-
-        // Simulate specular effect
-        Vec3 reflectDir = Vec3.normalize(glm::reflect(-lightDir, hit.normal));
-        float specFactor =
-          pow(std::max(glm::dot(reflectDir, viewDir), 0.0f), 16); // Higher exponent sharpens the highlight
-        Color specularHighlight = lightColor * specFactor * specularBoost;
-
-        lightContribution += specularHighlight;
-
-        lightContribution *= (1.0f - shadowIntensity);
-        lightContribution.r = std::min(lightContribution.r, 1.0f);
-        lightContribution.g = std::min(lightContribution.g, 1.0f);
-        lightContribution.b = std::min(lightContribution.b, 1.0f);
+        if (hit.material.specular > 1.0f) {
+            Color glowEffect = Vec3(0.5, 0.5, 0.5) * 0.2f; // A soft glow color
+            lightContribution += glowEffect;
+        }
+        lightContribution *= 1.0f - shadowIntensity;
 
         directColor += lightContribution; // Add contribution from this light
     }
@@ -210,7 +179,7 @@ int main() {
     Scene scene;
 
     // Add three spheres with diffuse material
-    Material discoBallMaterial = Material(Color(0.5f, 0.5f, 0.5f), 0.9f, 0.0f, 1.5f, 1);
+    Material discoBallMaterial = Material(Color(0.5f, 0.5f, 0.5f), 0.9f, 0.0f, 1.5f, 1, 0.8f);
 
     // Add the disco ball to the scene
     scene.push(Sphere(Vec3(0.0f, 15.0f, -10.0f), 2.0f, discoBallMaterial));
