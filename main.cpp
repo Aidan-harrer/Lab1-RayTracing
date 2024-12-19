@@ -71,6 +71,28 @@ Vec3 tileNormal(const Vec3 &normal, float tileSize) {
 
     return perturbedNormal;
 }
+Vec3 reflect(const Vec3 &lightDir, const Vec3 &normal) { return 2.0f * (normal * lightDir) * normal - lightDir; }
+Vec3 clampColor(const Vec3 &color, float minVal, float maxVal) {
+    return Vec3(std::max(minVal, std::min(color.x(), maxVal)), std::max(minVal, std::min(color.y(), maxVal)),
+                std::max(minVal, std::min(color.z(), maxVal)));
+}
+
+Color calculateLighting(const Vec3 &lightDir, const Vec3 &normal, const Vec3 &viewDir, const Color &lightColor) {
+    Vec3 reflectDir = reflect(lightDir, normal);
+
+    // Diffuse shading
+    float diffuse = std::max(normal * lightDir, 0.0f);
+
+    // Specular highlights with sharpness control
+    float shininess = 16.0f; // Adjust for sharper or softer highlights
+    float specular = std::pow(std::max(viewDir * reflectDir, 0.0f), shininess);
+
+    // Combine contributions
+    Color lightContribution = lightColor * (diffuse + 0.5f * specular);
+
+    // Clamp light contributions to avoid overexposure
+    return clampColor(lightContribution, 0.0f, 1.0f);
+}
 // Function to generate random directions for scattering rays
 Vec3 randomInUnitSphere() {
     Vec3 p;
@@ -93,11 +115,11 @@ Color traceRay(const Ray &r, Scene scene, int depth) {
                                    //   Vec3(0.5f, 15.5f, -10.5f),
                                    //   Vec3(-0.5f, 15.5f, -9.5f),
                                    // };
-                                   Vec3(0.0f, 30.0f, -5.0f)};
+                                   Vec3(0.0f, 20.0f, -5.0f)};
     const int numLights = 1;
     const float lightSize = 0.1f; // Small area light size
 
-    Vec3 perturbedNormal = tileNormal(hit.normal, 0.4f); // Adjust `tileSize` to control facet size
+    Vec3 perturbedNormal = tileNormal(hit.normal, 1.0f); // Adjust `tileSize` to control facet size
 
     directColor = Color(0.0f, 0.0f, 0.0f); // Accumulate direct lighting from all lights
 
@@ -108,7 +130,7 @@ Color traceRay(const Ray &r, Scene scene, int depth) {
         lightDir.normalize();
 
         // Soft shadows with area light sampling
-        int numSamples = 16;
+        int numSamples = 32;
         float shadowIntensity = 0.0f;
 
         for (int i = 0; i < numSamples; ++i) {
@@ -118,37 +140,50 @@ Color traceRay(const Ray &r, Scene scene, int depth) {
                 shadowIntensity += 0.75f;
             }
         }
+        // Check if the material is reflective (for disco ball)
+        if (hit.material.id == 1) {
+            reflectedColor = Color(0.0f, 1.0f, 0.0f);
+
+            // Generate multiple reflection rays for the disco ball
+            const int numReflectionRays = 5; // Number of rays to generate
+            for (int i = 0; i < numReflectionRays; ++i) {
+                // Randomly scatter the reflection rays around the hit point
+                Vec3 scatterDirection = hit.normal + randomInUnitSphere();
+                scatterDirection.normalize();
+
+                // Create a new ray from the hit point in the scattered direction
+                Ray reflectionRay(hit.position, scatterDirection);
+
+                // Trace the scattered ray
+                reflectedColor += traceRay(reflectionRay, scene, depth - 1);
+            }
+        }
+        // Handle refractions
+        if (hit.material.transparency > 0) {
+            refractedColor = traceRay(hit.getRefractedRay(), scene, depth - 1);
+            float transparencyFactor = shadow.material.transparency > 0 ? 0.5f : 1.0f;
+            shadowIntensity += 0.75f * transparencyFactor;
+        }
         shadowIntensity /= numSamples;
 
         // Calculate direct lighting for this light
+        float specularBoost = 2.0f; // Boost for reflected light on the disco ball
         Color lightContribution = hit.material.color * std::max(hit.normal * lightDir, 0.0f);
-        lightContribution *= 1.0f - shadowIntensity;
+
+        // Simulate specular effect
+        Vec3 reflectDir = Vec3.normalize(glm::reflect(-lightDir, hit.normal));
+        float specFactor =
+          pow(std::max(glm::dot(reflectDir, viewDir), 0.0f), 16); // Higher exponent sharpens the highlight
+        Color specularHighlight = lightColor * specFactor * specularBoost;
+
+        lightContribution += specularHighlight;
+
+        lightContribution *= (1.0f - shadowIntensity);
+        lightContribution.r = std::min(lightContribution.r, 1.0f);
+        lightContribution.g = std::min(lightContribution.g, 1.0f);
+        lightContribution.b = std::min(lightContribution.b, 1.0f);
 
         directColor += lightContribution; // Add contribution from this light
-    }
-
-    // Check if the material is reflective (for disco ball)
-    if (hit.material.reflectivity > 0) {
-        reflectedColor = Color(0.0f, 0.0f, 0.0f);
-
-        // Generate multiple reflection rays for the disco ball
-        const int numReflectionRays = 5; // Number of rays to generate
-        for (int i = 0; i < numReflectionRays; ++i) {
-            // Randomly scatter the reflection rays around the hit point
-            Vec3 scatterDirection = hit.normal + randomInUnitSphere();
-            scatterDirection.normalize();
-
-            // Create a new ray from the hit point in the scattered direction
-            Ray reflectionRay(hit.position, scatterDirection);
-
-            // Trace the scattered ray
-            reflectedColor += traceRay(reflectionRay, scene, depth - 1);
-        }
-    }
-
-    // Handle refractions
-    if (hit.material.transparency > 0) {
-        refractedColor = traceRay(hit.getRefractedRay(), scene, depth - 1);
     }
 
     // Combine lighting contributions
@@ -175,10 +210,11 @@ int main() {
     Scene scene;
 
     // Add three spheres with diffuse material
-    Material discoBallMaterial = Material(Color(1.0f, 1.0f, 1.0f), 0.9f, 0.0f, 1.0f, 1);
+    Material discoBallMaterial = Material(Color(0.5f, 0.5f, 0.5f), 0.9f, 0.0f, 1.5f, 1);
 
     // Add the disco ball to the scene
     scene.push(Sphere(Vec3(0.0f, 15.0f, -10.0f), 2.0f, discoBallMaterial));
+
     scene.push(Sphere(Vec3(-3.0f, 9.0f, -3.0f), 2.0f, transparent));
     scene.push(Sphere(Vec3(3.0f, 9.0f, -3.0f), 2.0f, transparent));
 

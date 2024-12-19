@@ -20,7 +20,6 @@ class Vec3 {
     float z() const { return m[2]; }
 
     float operator[](int i) const { return m[i]; }
-
     Vec3 operator*(int a) const { return Vec3((float)a * m[0], (float)a * m[1], (float)a * m[2]); }
 
     Vec3 operator*(float a) const { return Vec3(a * m[0], a * m[1], a * m[2]); }
